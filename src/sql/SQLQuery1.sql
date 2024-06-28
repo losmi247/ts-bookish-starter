@@ -1,0 +1,81 @@
+DROP TABLE IF EXISTS CheckOut;
+DROP TABLE IF EXISTS Users;
+DROP TABLE IF EXISTS Copies;
+DROP TABLE IF EXISTS Books;
+DROP TABLE IF EXISTS Authors;
+DROP TABLE IF EXISTS AuthorInfo;
+
+
+CREATE TABLE AuthorInfo (
+    author_id INT NOT NULL IDENTITY(1,1),
+    first_name VARCHAR(20) NOT NULL,
+    surname VARCHAR(20) NOT NULL,
+    PRIMARY KEY (author_id)
+);
+
+CREATE TABLE Authors (
+    isbn VARCHAR(13) NOT NULL,
+    author_id INT NOT NULL,
+    PRIMARY KEY (isbn),
+    FOREIGN KEY (author_id) REFERENCES AuthorInfo(author_id)
+);
+
+CREATE TABLE Books (
+	isbn VARCHAR(13) NOT NULL,
+	title VARCHAR(100) NOT NULL,
+	PRIMARY KEY (isbn),
+	FOREIGN KEY (isbn) REFERENCES Authors(isbn)
+);
+
+CREATE TABLE Copies (
+	isbn VARCHAR(13) NOT NULL,
+	book_id INT NOT NULL IDENTITY(1,1),
+	PRIMARY KEY (book_id),
+	FOREIGN KEY (isbn) REFERENCES Books(isbn)
+);
+
+CREATE TABLE Users (
+	user_id INT NOT NULL IDENTITY(1,1),
+	username VARCHAR(30),
+	PRIMARY KEY (user_id)
+);
+
+CREATE TABLE CheckOut (
+	book_id INT NOT NULL,
+	user_id INT NOT NULL,
+	due_date DATE NOT NULL,
+	PRIMARY KEY (book_id),
+	FOREIGN KEY (user_id) REFERENCES Users(user_id),
+	FOREIGN KEY (book_id) REFERENCES Copies(book_id)
+);
+
+
+INSERT INTO Users VALUES ('milospuric');
+INSERT INTO Users VALUES ('connor');
+INSERT INTO Users Values ('john');
+
+INSERT INTO AuthorInfo VALUES ('Dan', 'Brown');
+INSERT INTO AuthorInfo VALUES ('Jane', 'Austen');
+INSERT INTO AuthorInfo VALUES ('Mark', 'Twain');
+
+INSERT INTO Authors VALUES ('1234567891234', 1);
+INSERT INTO Authors VALUES ('1234567891235', 2);
+INSERT INTO Authors VALUES ('1234567891236', 3);
+
+INSERT INTO Books VALUES ('1234567891234', 'Da Vinci Code');
+INSERT INTO Books VALUES ('1234567891235', 'Pride and Prejudice');
+INSERT INTO Books VALUES ('1234567891236', 'The Adventures of Huckleberry Finn');
+
+INSERT INTO Copies VALUES ('1234567891234');
+INSERT INTO Copies VALUES ('1234567891234');
+INSERT INTO Copies VALUES ('1234567891235');
+INSERT INTO Copies VALUES ('1234567891235');
+INSERT INTO Copies VALUES ('1234567891235');
+INSERT INTO Copies VALUES ('1234567891236');
+INSERT INTO Copies VALUES ('1234567891236');
+INSERT INTO Copies VALUES ('1234567891236');
+INSERT INTO Copies VALUES ('1234567891236');
+
+INSERT INTO CheckOut VALUES (2,1,'07/27/2024');
+INSERT INTO CheckOut VALUES (5,1,'07/14/2024');
+INSERT INTO CheckOut VALUES (6,1,'08/28/2024');
