@@ -29,7 +29,7 @@ class BookController {
                 }
             },
             options: {
-                port: 1433, // Default Port
+                port: 1433,
                 trustServerCertificate: true,
                 database: 'bookish',
             }
@@ -64,14 +64,15 @@ class BookController {
                 books.push(book);
             });
 
-            /// this event fires when the sql command has been completed
+            // this event fires when the sql command has been completed
             databaseRequest.on('doneInProc', (rowCount, more) => {
                 console.log(rowCount + ' rows returned');
                 
-                /// send an http response to client
+                // send an http response to client
                 res.status(200).json(books);
             });
 
+            // start the sql command
             this.databaseConnection.execSql(databaseRequest);
         });
     }
@@ -81,20 +82,48 @@ class BookController {
         let authorFirstName: string = req.body.firstName;
         let authorSurname: string = req.body.lastName;
         let isbn: string = req.body.isbn;
-        let numberOfCopies = req.body.copies;
+        let numberOfCopies: number = req.body.copies;
 
-        const sqlStatementForTableBooks = `INSERT INTO Books VALUES (${isbn}, ${bookTitle})`;
+        const sqlForTableBooks = `INSERT INTO Books VALUES (@isbn, @bookTitle)
+        WHERE NOT EXISTS (SELECT * FROM Books WHERE isbn=@isbn)`;
+
+        const sqlForTableAuthorInfo = `INSERT INTO AuthorInfo VALUES (@authorFirstName, @authorSurname)
+        WHERE NOT EXISTS (SELECT * FROM AuthorInfo WHERE first_name=@authorFirstName AND surname=@authorSurname)`;
+        
+        /// add more sql statements for Copies and Authors tables
+
+        const finalSqlCommand = [sqlForTableBooks, sqlForTableAuthorInfo].join('; ');
+
         this.databaseConnection.connect((err) => {
             if (err) {
                 console.log('Connection Failed');
                 throw err;
             }
 
-            const databaseRequest = new tedious.Request(sqlStatementForTableBooks, (err, rowCount) => {
+            const databaseRequest = new tedious.Request(finalSqlCommand, (err, rowCount) => {
                 if (err) {
                     throw err;
                 }
                 console.log('DONE!');
+            });
+    
+            databaseRequest.addParameter('bookTitle', tedious.TYPES.Char);
+            databaseRequest.addParameter('authorFirstName', tedious.TYPES.Char);
+            databaseRequest.addParameter('authorSurname', tedious.TYPES.Char);
+            databaseRequest.addParameter('isbn', tedious.TYPES.Char);
+            databaseRequest.addParameter('numberOfCopies', tedious.TYPES.Int); 
+    
+            databaseRequest.on('prepared', () => {
+                console.log('request prepared');
+                
+                /// execute the prepared statement
+                this.databaseConnection.execute(databaseRequest, {
+                    bookTitle: bookTitle,
+                    authorFirstName: authorFirstName,
+                    authorSurname: authorSurname,
+                    isbn: isbn,
+                    numberOfCopies: numberOfCopies
+                });
             });
 
             /// this event fires when the sql command has been completed
@@ -103,7 +132,8 @@ class BookController {
                 res.status(200);
             });
 
-            this.databaseConnection.execSql(databaseRequest);
+            //this.databaseConnection.execSql(databaseRequest);         
+            this.databaseConnection.prepare(databaseRequest);
         });
     }
 }
