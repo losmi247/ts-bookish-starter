@@ -16,7 +16,7 @@ class BookController {
     databaseConnection: tedious.Connection;
 
     constructor() {
-        var config: tedious.ConnectionConfiguration = {
+        let databaseConnectionConfiguration: tedious.ConnectionConfiguration = {
             //client: 'mssql',
             server: '127.0.0.1',
             authentication: {
@@ -35,7 +35,7 @@ class BookController {
             }
         };
 
-        this.databaseConnection = new tedious.Connection(config);
+        this.databaseConnection = new tedious.Connection(databaseConnectionConfiguration);
 
         this.router = Router();
         this.router.get('/:id', this.getBook.bind(this));
@@ -55,6 +55,7 @@ class BookController {
                     throw err;
                 }
                 console.log('DONE!');
+                this.databaseConnection.close();
             });
 
             // whenever a row is emitted from the db, add it to our list
@@ -84,15 +85,41 @@ class BookController {
         let isbn: string = req.body.isbn;
         let numberOfCopies: number = req.body.copies;
 
-        const sqlForTableBooks = `INSERT INTO Books VALUES (@isbn, @bookTitle)
-        WHERE NOT EXISTS (SELECT * FROM Books WHERE isbn=@isbn)`;
+        const sqlCommand = `
+            DECLARE @author_id INT;
 
-        const sqlForTableAuthorInfo = `INSERT INTO AuthorInfo VALUES (@authorFirstName, @authorSurname)
-        WHERE NOT EXISTS (SELECT * FROM AuthorInfo WHERE first_name=@authorFirstName AND surname=@authorSurname)`;
-        
-        /// add more sql statements for Copies and Authors tables
+            BEGIN TRANSACTION;
 
-        const finalSqlCommand = [sqlForTableBooks, sqlForTableAuthorInfo].join('; ');
+            -- add to AuthorInfo
+            IF NOT EXISTS (SELECT * FROM AuthorInfo WHERE first_name = @authorFirstName AND surname = @authorSurname)
+            BEGIN
+                INSERT INTO AuthorInfo (first_name, surname) VALUES (@authorFirstName, @authorSurname);
+            END
+
+            -- add to Authors
+            SELECT @author_id = author_id FROM AuthorInfo 
+            WHERE first_name = @authorFirstName AND surname = @authorSurname;
+            IF NOT EXISTS (SELECT * FROM Authors WHERE isbn = @isbn AND author_id = @author_id)
+            BEGIN
+                INSERT INTO Authors (isbn, author_id) VALUES (@isbn, @author_id);
+            END
+
+            -- add to Books
+            IF NOT EXISTS (SELECT * FROM Books WHERE isbn = @isbn)
+            BEGIN
+                INSERT INTO Books (isbn, title) VALUES (@isbn, @bookTitle);
+            END
+
+            -- add #copies to Copies
+            DECLARE @Counter INT 
+            SET @Counter=1
+            WHILE (@Counter <= @numberOfCopies)
+            BEGIN
+                INSERT INTO Copies (isbn) VALUES (@isbn)
+                SET @Counter = @Counter + 1
+            END
+
+            COMMIT TRANSACTION;`;
 
         this.databaseConnection.connect((err) => {
             if (err) {
@@ -100,17 +127,18 @@ class BookController {
                 throw err;
             }
 
-            const databaseRequest = new tedious.Request(finalSqlCommand, (err, rowCount) => {
+            const databaseRequest = new tedious.Request(sqlCommand, (err, rowCount) => {
                 if (err) {
                     throw err;
                 }
                 console.log('DONE!');
+                this.databaseConnection.close();
             });
     
-            databaseRequest.addParameter('bookTitle', tedious.TYPES.Char);
-            databaseRequest.addParameter('authorFirstName', tedious.TYPES.Char);
-            databaseRequest.addParameter('authorSurname', tedious.TYPES.Char);
-            databaseRequest.addParameter('isbn', tedious.TYPES.Char);
+            databaseRequest.addParameter('bookTitle', tedious.TYPES.VarChar);
+            databaseRequest.addParameter('authorFirstName', tedious.TYPES.VarChar);
+            databaseRequest.addParameter('authorSurname', tedious.TYPES.VarChar);
+            databaseRequest.addParameter('isbn', tedious.TYPES.VarChar);
             databaseRequest.addParameter('numberOfCopies', tedious.TYPES.Int); 
     
             databaseRequest.on('prepared', () => {
@@ -126,13 +154,13 @@ class BookController {
                 });
             });
 
-            /// this event fires when the sql command has been completed
-            databaseRequest.on('doneInProc', (rowCount, more) => {
-                /// send an http response to client
-                res.status(200);
+            // this event fires when the sql command has been completed
+            databaseRequest.on('requestCompleted', () => {
+                // send an http response to client
+                res.status(200).json({});
             });
 
-            //this.databaseConnection.execSql(databaseRequest);         
+            //databaseConnection.execSql(databaseRequest);         
             this.databaseConnection.prepare(databaseRequest);
         });
     }
