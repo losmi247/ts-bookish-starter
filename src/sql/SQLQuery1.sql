@@ -37,6 +37,7 @@ CREATE TABLE Copies (
 CREATE TABLE Users (
 	user_id INT NOT NULL IDENTITY(1,1),
 	username VARCHAR(30),
+	user_password VARCHAR(100),
 	PRIMARY KEY (user_id)
 );
 
@@ -50,9 +51,9 @@ CREATE TABLE CheckOut (
 );
 
 
-INSERT INTO Users VALUES ('milospuric');
-INSERT INTO Users VALUES ('connor');
-INSERT INTO Users Values ('john');
+INSERT INTO Users VALUES ('milospuric', 'password1');
+INSERT INTO Users VALUES ('conorbleakley', 'password2');
+INSERT INTO Users Values ('john', 'password3');
 
 INSERT INTO AuthorInfo VALUES ('Dan', 'Brown');
 INSERT INTO AuthorInfo VALUES ('Jane', 'Austen');

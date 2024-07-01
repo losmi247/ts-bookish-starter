@@ -1,6 +1,10 @@
 import express from 'express';
 import 'dotenv/config';
 
+import passport from 'passport';
+require('./passport');
+import auth from './auth';
+
 import healthcheckRoutes from './controllers/healthcheckController';
 import bookRoutes from './controllers/bookController';
 
@@ -15,5 +19,6 @@ app.listen(port, () => {
 /**
  * Primary app routes.
  */
+app.use('/auth', auth);
 app.use('/healthcheck', healthcheckRoutes);
-app.use('/books', bookRoutes);
+app.use('/books', passport.authenticate('jwt', {session: false}), bookRoutes);

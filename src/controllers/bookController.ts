@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import * as tedious from 'tedious';
+import { Query, QueryParameter} from '../query';
 
 class Book {
     ISBN: string;
@@ -13,79 +14,79 @@ class Book {
 
 class BookController {
     router: Router;
-    databaseConnection: tedious.Connection;
 
     constructor() {
-        let databaseConnectionConfiguration: tedious.ConnectionConfiguration = {
-            //client: 'mssql',
-            server: '127.0.0.1',
-            authentication: {
-                type: 'default',
-                options: {
-                    userName: 'BookishCM',
-                    password: 'abcdefghij123*',
-                    trustServerCertificate: true,
-                    encrypt: false,
-                }
-            },
-            options: {
-                port: 1433,
-                trustServerCertificate: true,
-                database: 'bookish',
-            }
-        };
-
-        this.databaseConnection = new tedious.Connection(databaseConnectionConfiguration);
-
         this.router = Router();
-        this.router.get('/:id', this.getBook.bind(this));
+        this.router.get('/', this.getBooks.bind(this));
+        this.router.get('/search', this.searchBooks.bind(this));
         this.router.post('/', this.createBook.bind(this));
     }
 
-    getBook(req: Request, res: Response) {
-        const sqlStatement = "SELECT * FROM Books";
-        this.databaseConnection.connect((err) => {
-            if (err) {
-                console.log('Connection Failed');
-                throw err;
-            }
+    async getBooks(req: Request, res: Response) {
+        let sqlStatement = `
+        SELECT * FROM Books
+        ORDER BY title`;
 
-            const databaseRequest = new tedious.Request(sqlStatement, (err, rowCount) => {
-                if (err) {
-                    throw err;
-                }
-                console.log('DONE!');
-                this.databaseConnection.close();
-            });
+        let getBooks = new Query(sqlStatement, new Array(0));
 
-            // whenever a row is emitted from the db, add it to our list
+        try {
+            let booksTable: Array<any[]> = await getBooks.executeStatement();
             let books = new Array(0);
-            databaseRequest.on('row', (columns) => {
+            for(let columns of booksTable) {
                 let book = new Book(columns[0].value, columns[1].value);
                 books.push(book);
-            });
-
-            // this event fires when the sql command has been completed
-            databaseRequest.on('doneInProc', (rowCount, more) => {
-                console.log(rowCount + ' rows returned');
-                
-                // send an http response to client
-                res.status(200).json(books);
-            });
-
-            // start the sql command
-            this.databaseConnection.execSql(databaseRequest);
-        });
+            }
+            res.status(200).json(books);
+        } catch {
+            res.status(401);
+        }
     }
 
-    createBook(req: Request, res: Response) {
+    async searchBooks(req: Request, res: Response) {
+        let bookTitle = req.query.title;
+        let authorFirstName = req.query.firstName;
+        let authorSurname = req.query.surname;
+
+        console.log(bookTitle , authorFirstName , authorSurname);
+
+        const sqlStatement = `
+            SELECT Books.isbn, Books.title, AuthorInfo.first_name, AuthorInfo.surname FROM Books
+            INNER JOIN Authors ON Books.isbn = Authors.isbn
+            INNER Join AuthorInfo ON Authors.author_id = AuthorInfo.author_id
+            WHERE (title=@bookTitle OR @bookTitle IS NULL) 
+                AND (first_name=@authorFirstName OR @authorFirstName is NULL) 
+                AND (surname=@authorSurname OR @authorSurname is NULL);`;
+
+        let searchParameters = new Array(0);
+        searchParameters.push(new QueryParameter("bookTitle", (bookTitle as string), tedious.TYPES.VarChar));
+        searchParameters.push(new QueryParameter("authorFirstName", (authorFirstName as string), tedious.TYPES.VarChar));
+        searchParameters.push(new QueryParameter("authorSurname", (authorSurname as string), tedious.TYPES.VarChar));
+        
+        let searchBooks = new Query(sqlStatement, searchParameters);
+
+        try {
+            let booksTable: Array<any[]> = await searchBooks.executeStatement();
+            let books = new Array(0);
+            for(let columns of booksTable) {
+                for(let i = 0; i < columns.length; i++) {
+                    books.push(columns[i].value)
+                }
+            }
+            res.status(200).json(books);
+        } catch {
+            res.status(401);
+        }
+
+    }
+
+    async createBook(req: Request, res: Response) {
         let bookTitle: string = req.body.title;
         let authorFirstName: string = req.body.firstName;
-        let authorSurname: string = req.body.lastName;
+        let authorSurname: string = req.body.surname;
         let isbn: string = req.body.isbn;
-        let numberOfCopies: number = req.body.copies;
+        let numberOfCopies: number = req.body.numberOfCopies;
 
-        const sqlCommand = `
+        const sqlStatementAddBook = `
             DECLARE @author_id INT;
 
             BEGIN TRANSACTION;
@@ -110,59 +111,37 @@ class BookController {
                 INSERT INTO Books (isbn, title) VALUES (@isbn, @bookTitle);
             END
 
-            -- add #copies to Copies
-            DECLARE @Counter INT 
-            SET @Counter=1
-            WHILE (@Counter <= @numberOfCopies)
-            BEGIN
-                INSERT INTO Copies (isbn) VALUES (@isbn)
-                SET @Counter = @Counter + 1
-            END
-
             COMMIT TRANSACTION;`;
 
-        this.databaseConnection.connect((err) => {
-            if (err) {
-                console.log('Connection Failed');
-                throw err;
+        let bookParameters = new Array(0);
+        bookParameters.push(new QueryParameter("bookTitle", bookTitle, tedious.TYPES.VarChar));
+        bookParameters.push(new QueryParameter("authorFirstName", authorFirstName, tedious.TYPES.VarChar));
+        bookParameters.push(new QueryParameter("authorSurname", authorSurname, tedious.TYPES.VarChar));
+        bookParameters.push(new QueryParameter("isbn", isbn, tedious.TYPES.VarChar));
+
+        let addBook = new Query(sqlStatementAddBook, bookParameters);
+        try {
+            await addBook.executeStatement();
+        } catch {
+            return res.status(400).json();
+        }
+
+        const sqlStatementAddCopies = `
+            INSERT INTO Copies (isbn) VALUES (@isbn)
+        `;
+
+        for(let i = 0; i < numberOfCopies; i++){
+            try{
+                let copiesParameters = new Array(0);
+                copiesParameters.push(new QueryParameter("isbn", isbn, tedious.TYPES.VarChar));
+                let addCopies = new Query(sqlStatementAddCopies, copiesParameters);
+                await addCopies.executeStatement();
+            } catch {
+                return res.status(400).json();
             }
+        }
 
-            const databaseRequest = new tedious.Request(sqlCommand, (err, rowCount) => {
-                if (err) {
-                    throw err;
-                }
-                console.log('DONE!');
-                this.databaseConnection.close();
-            });
-    
-            databaseRequest.addParameter('bookTitle', tedious.TYPES.VarChar);
-            databaseRequest.addParameter('authorFirstName', tedious.TYPES.VarChar);
-            databaseRequest.addParameter('authorSurname', tedious.TYPES.VarChar);
-            databaseRequest.addParameter('isbn', tedious.TYPES.VarChar);
-            databaseRequest.addParameter('numberOfCopies', tedious.TYPES.Int); 
-    
-            databaseRequest.on('prepared', () => {
-                console.log('request prepared');
-                
-                /// execute the prepared statement
-                this.databaseConnection.execute(databaseRequest, {
-                    bookTitle: bookTitle,
-                    authorFirstName: authorFirstName,
-                    authorSurname: authorSurname,
-                    isbn: isbn,
-                    numberOfCopies: numberOfCopies
-                });
-            });
-
-            // this event fires when the sql command has been completed
-            databaseRequest.on('requestCompleted', () => {
-                // send an http response to client
-                res.status(200).json({});
-            });
-
-            //databaseConnection.execSql(databaseRequest);         
-            this.databaseConnection.prepare(databaseRequest);
-        });
+        res.status(201).json();
     }
 }
 
