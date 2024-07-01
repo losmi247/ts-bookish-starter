@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import * as tedious from 'tedious';
-import { Query, QueryParameter} from '../query';
+import { Query, QueryParameter} from '../sql/query';
 
 class Book {
     ISBN: string;
@@ -20,12 +20,41 @@ class BookController {
         this.router.get('/', this.getBooks.bind(this));
         this.router.get('/search', this.searchBooks.bind(this));
         this.router.post('/', this.createBook.bind(this));
+        this.router.get('/checkouts', this.getCheckedOutBooks.bind(this));
+    }
+
+    async getCheckedOutBooks(req: Request, res: Response) {
+        let username = req.query.username as string;
+
+        let sqlStatement = `SELECT Books.isbn, Books.title, CheckOut.due_date FROM Users
+            INNER JOIN CheckOut ON Users.user_id = CheckOut.user_id
+            INNER JOIN Copies ON Copies.book_id = CheckOut.book_id
+            INNER JOIN Books ON Books.isbn = Copies.isbn
+            WHERE Users.username=@username`;
+
+        let searchParameters = [
+            new QueryParameter("username", username, tedious.TYPES.VarChar)
+        ];
+        let getCheckouts = new Query(sqlStatement, searchParameters);
+
+        try {
+            let booksTable: Array<any[]> = await getCheckouts.executeStatement();
+            let books = new Array(0);
+            for(let columns of booksTable) {
+                let book = new Array(0);
+                for(let i = 0; i < columns.length; i++) {
+                    book.push(columns[i].value)
+                }
+                books.push(book);
+            }
+            res.status(200).json(books);
+        } catch(e) {
+            res.status(401).json(e);
+        }
     }
 
     async getBooks(req: Request, res: Response) {
-        let sqlStatement = `
-        SELECT * FROM Books
-        ORDER BY title`;
+        let sqlStatement = `SELECT * FROM Books ORDER BY title`;
 
         let getBooks = new Query(sqlStatement, new Array(0));
 
@@ -37,8 +66,8 @@ class BookController {
                 books.push(book);
             }
             res.status(200).json(books);
-        } catch {
-            res.status(401);
+        } catch (e) {
+            res.status(401).json(e);
         }
     }
 
@@ -46,8 +75,6 @@ class BookController {
         let bookTitle = req.query.title;
         let authorFirstName = req.query.firstName;
         let authorSurname = req.query.surname;
-
-        console.log(bookTitle , authorFirstName , authorSurname);
 
         const sqlStatement = `
             SELECT Books.isbn, Books.title, AuthorInfo.first_name, AuthorInfo.surname FROM Books
@@ -68,15 +95,16 @@ class BookController {
             let booksTable: Array<any[]> = await searchBooks.executeStatement();
             let books = new Array(0);
             for(let columns of booksTable) {
+                let book = new Array(0);
                 for(let i = 0; i < columns.length; i++) {
-                    books.push(columns[i].value)
+                    book.push(columns[i].value)
                 }
+                books.push(book);
             }
             res.status(200).json(books);
-        } catch {
-            res.status(401);
+        } catch (e) {
+            res.status(401).json(e);
         }
-
     }
 
     async createBook(req: Request, res: Response) {
@@ -112,7 +140,6 @@ class BookController {
             END
 
             COMMIT TRANSACTION;`;
-
         let bookParameters = new Array(0);
         bookParameters.push(new QueryParameter("bookTitle", bookTitle, tedious.TYPES.VarChar));
         bookParameters.push(new QueryParameter("authorFirstName", authorFirstName, tedious.TYPES.VarChar));
@@ -122,22 +149,19 @@ class BookController {
         let addBook = new Query(sqlStatementAddBook, bookParameters);
         try {
             await addBook.executeStatement();
-        } catch {
-            return res.status(400).json();
+        } catch (e) {
+            return res.status(400).json(e);
         }
 
-        const sqlStatementAddCopies = `
-            INSERT INTO Copies (isbn) VALUES (@isbn)
-        `;
-
+        const sqlStatementAddCopies = `INSERT INTO Copies (isbn) VALUES (@isbn)`;
         for(let i = 0; i < numberOfCopies; i++){
             try{
                 let copiesParameters = new Array(0);
                 copiesParameters.push(new QueryParameter("isbn", isbn, tedious.TYPES.VarChar));
                 let addCopies = new Query(sqlStatementAddCopies, copiesParameters);
                 await addCopies.executeStatement();
-            } catch {
-                return res.status(400).json();
+            } catch (e) {
+                return res.status(401).json(e);
             }
         }
 

@@ -1,10 +1,10 @@
 import express from 'express';
+import passport from 'passport';
+
 import 'dotenv/config';
 
-import passport from 'passport';
-require('./passport');
-import auth from './auth';
-
+import auth from './authorisation/auth';
+import { initPassport } from './authorisation/passport';
 import healthcheckRoutes from './controllers/healthcheckController';
 import bookRoutes from './controllers/bookController';
 
@@ -16,9 +16,12 @@ app.listen(port, () => {
     return console.log(`Express is listening at http://localhost:${port}`);
 });
 
+initPassport(app);
+
 /**
  * Primary app routes.
  */
 app.use('/auth', auth);
 app.use('/healthcheck', healthcheckRoutes);
-app.use('/books', passport.authenticate('jwt', {session: false}), bookRoutes);
+/// protect the below route using jwt
+app.use('/books', passport.authenticate("jwt", { session: false }), bookRoutes);
